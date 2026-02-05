@@ -41,6 +41,7 @@ class TurboM(Turbo1):
     min_cuda : We use float64 on the CPU if we have this or fewer datapoints
     device : Device to use for GP fitting ("cpu" or "cuda")
     dtype : Dtype to use for GP fitting ("float32" or "float64")
+    use_trust_region : Disable trust-region adaptation and clipping when set to False.
 
     Example usage:
         turbo5 = TurboM(f=f, lb=lb, ub=ub, n_init=n_init, max_evals=max_evals, n_trust_regions=5)
@@ -64,6 +65,7 @@ class TurboM(Turbo1):
         min_cuda=1024,
         device="cpu",
         dtype="float64",
+        use_trust_region=True,
     ):
         self.n_trust_regions = n_trust_regions
         super().__init__(
@@ -80,6 +82,7 @@ class TurboM(Turbo1):
             min_cuda=min_cuda,
             device=device,
             dtype=dtype,
+            use_trust_region=use_trust_region,
         )
 
         self.succtol = 3
@@ -103,6 +106,8 @@ class TurboM(Turbo1):
         self.length = self.length_init * np.ones(self.n_trust_regions)
 
     def _adjust_length(self, fX_next, i):
+        if not self.use_trust_region:
+            return
         assert i >= 0 and i <= self.n_trust_regions - 1
 
         fX_min = self.fX[self._idx[:, 0] == i, 0].min()  # Target value
@@ -214,6 +219,8 @@ class TurboM(Turbo1):
 
             # Check if any TR needs to be restarted
             for i in range(self.n_trust_regions):
+                if not self.use_trust_region:
+                    continue
                 if self.length[i] < self.length_min:  # Restart trust region if converged
                     idx_i = self._idx[:, 0] == i
 

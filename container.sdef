@@ -1,0 +1,30 @@
+Bootstrap: docker
+From: gaunab/bencher:latest
+
+%environment
+    export LANG=C.UTF-8
+    export PATH="/root/.local/bin:$PATH"
+
+%files
+    . /opt/TuRBO
+
+%post
+    set -e
+    apt-get update -y
+    apt-get install -y --no-install-recommends python3-venv build-essential git curl
+    python3 -m venv /opt/venv
+    . /opt/venv/bin/activate
+    pip install --upgrade pip
+    cd /opt/TuRBO
+    pip install .
+    apt-get purge -y --auto-remove build-essential git curl
+    rm -rf /var/lib/apt/lists/*
+    rm -rf /root/.cache/pip
+
+%startscript
+    echo "Starting container"
+    bash -c "python3 /entrypoint.py"
+
+%runscript
+    cd /opt/TuRBO
+    exec /opt/venv/bin/python /opt/TuRBO/main.py "$@"

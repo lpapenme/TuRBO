@@ -40,6 +40,7 @@ class Turbo1:
     min_cuda : We use float64 on the CPU if we have this or fewer datapoints
     device : Device to use for GP fitting ("cpu" or "cuda")
     dtype : Dtype to use for GP fitting ("float32" or "float64")
+    use_trust_region : Disable trust-region adaptation and clipping when set to False.
 
     Example usage:
         turbo1 = Turbo1(f=f, lb=lb, ub=ub, n_init=n_init, max_evals=max_evals)
@@ -62,6 +63,7 @@ class Turbo1:
         min_cuda=1024,
         device="cpu",
         dtype="float64",
+        use_trust_region=True,
     ):
 
         # Very basic input checks
@@ -77,6 +79,7 @@ class Turbo1:
         assert max_evals > n_init and max_evals > batch_size
         assert device == "cpu" or device == "cuda"
         assert dtype == "float32" or dtype == "float64"
+        assert isinstance(use_trust_region, bool)
         if device == "cuda":
             assert torch.cuda.is_available(), "can't use cuda if it's not available"
 
@@ -94,6 +97,7 @@ class Turbo1:
         self.use_ard = use_ard
         self.max_cholesky_size = max_cholesky_size
         self.n_training_steps = n_training_steps
+        self.use_trust_region = use_trust_region
 
         # Hyperparameters
         self.mean = np.zeros((0, 1))
@@ -135,6 +139,8 @@ class Turbo1:
         self.length = self.length_init
 
     def _adjust_length(self, fX_next):
+        if not self.use_trust_region:
+            return
         if np.min(fX_next) < np.min(self._fX) - 1e-3 * math.fabs(np.min(self._fX)):
             self.succcount += 1
             self.failcount = 0
@@ -179,11 +185,15 @@ class Turbo1:
 
         # Create the trust region boundaries
         x_center = X[fX.argmin().item(), :][None, :]
-        weights = gp.covar_module.base_kernel.lengthscale.cpu().detach().numpy().ravel()
-        weights = weights / weights.mean()  # This will make the next line more stable
-        weights = weights / np.prod(np.power(weights, 1.0 / len(weights)))  # We now have weights.prod() = 1
-        lb = np.clip(x_center - weights * length / 2.0, 0.0, 1.0)
-        ub = np.clip(x_center + weights * length / 2.0, 0.0, 1.0)
+        if self.use_trust_region:
+            weights = gp.covar_module.base_kernel.lengthscale.cpu().detach().numpy().ravel()
+            weights = weights / weights.mean()  # This will make the next line more stable
+            weights = weights / np.prod(np.power(weights, 1.0 / len(weights)))  # We now have weights.prod() = 1
+            lb = np.clip(x_center - weights * length / 2.0, 0.0, 1.0)
+            ub = np.clip(x_center + weights * length / 2.0, 0.0, 1.0)
+        else:
+            lb = np.zeros_like(x_center)
+            ub = np.ones_like(x_center)
 
         # Draw a Sobolev sequence in [lb, ub]
         seed = np.random.randint(int(1e6))
@@ -235,7 +245,7 @@ class Turbo1:
 
     def optimize(self):
         """Run the full optimization process."""
-        while self.n_evals < self.max_evals:
+        while self.n_evals < self.max_evals and (not self.use_trust_region or self.length >= self.length_min):
             if len(self._fX) > 0 and self.verbose:
                 n_evals, fbest = self.n_evals, self._fX.min()
                 print(f"{n_evals}) Restarting with fbest = {fbest:.4}")
