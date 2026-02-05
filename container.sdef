@@ -6,7 +6,10 @@ From: gaunab/bencher:latest
     export PATH="/root/.local/bin:$PATH"
 
 %files
-    . /opt/TuRBO
+    ./turbo /opt/TuRBO/turbo
+    ./main.py /opt/TuRBO/main.py
+    ./setup.py /opt/TuRBO/setup.py
+    ./requirements.txt /opt/TuRBO/requirements.txt
 
 %post
     set -e
